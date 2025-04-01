@@ -1,0 +1,54 @@
+syntax = "proto3";
+package image;
+
+// enum Flip {
+//   DefaultFlip = 0;
+//   Upright = 1;
+//   Rotated90 = 2;
+//   Rotated180 = 3;
+//   Rotated270 = 4;
+// }
+
+// enum Size {
+//   DefaultSize = 0;
+//   Low = 1;
+//   Mid = 2;
+//   High = 3;
+// }
+
+// message ImageRequest {
+//   Flip flip = 1;
+//   Size thumb_size = 2;
+//   string path = 3;
+//   bool jpeg_sidecar = 4;
+//   bool force_libraw = 5;
+//   bool request_id = 6;
+// }
+
+enum ResponseCode {
+  DefaultResponseCode = 0;
+  Success = 1;
+  NotFound = 2;
+  Failed = 3;
+}
+
+enum ImageType {
+  DefaultImageType = 0;
+  Jpeg = 1;
+  Png = 2;
+  Raw = 3;
+}
+
+message ImageResponse {
+  uint32 request_id = 1;
+  ResponseCode response_code = 2;
+  ImageType image_type = 3;
+  bytes data = 4;
+  uint32 content_length = 5;
+  // Flip flip = 1;
+  // Size thumb_size = 2;
+  // string path = 3;
+  // bool jpeg_sidecar = 4;
+  // bool force_libraw = 5;
+  // bool request_id = 6;
+}
