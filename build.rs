@@ -1,11 +1,14 @@
-use std::{env, io::Result, path::PathBuf};
+use std::{env, path::Path};
 
-fn main() -> Result<()> {
-    // let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let out_dir = env::var("OUT_DIR")?;
+    let builder = tonic_build::configure();
 
-    prost_build::Config::new()
-        .out_dir("src/schema")
-        .compile_protos(&["src/proto/image.proto"], &["src/"])?;
-    // prost_build::compile_protos(&["src/proto/image.proto"], &["src/"])?;
+    builder
+        .build_client(false)
+        .build_server(true)
+        .build_transport(false)
+        .out_dir(Path::new(&out_dir));
+
     Ok(())
 }

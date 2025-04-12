@@ -39,6 +39,8 @@ enum ImageType {
   Raw = 3;
 }
 
+message ImageRequest { string path = 1; }
+
 message ImageResponse {
   uint32 request_id = 1;
   ResponseCode response_code = 2;
@@ -52,3 +54,7 @@ message ImageResponse {
   // bool force_libraw = 5;
   // bool request_id = 6;
 }
+
+service ImageService { 
+  rpc GetImage(ImageRequest) returns (ImageResponse);
+};

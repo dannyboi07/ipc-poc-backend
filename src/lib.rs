@@ -1,5 +1,5 @@
 pub mod image_schema {
-    include!("schema/image.rs");
+    include!(concat!(env!("OUT_DIR"), "/image.rs"));
 }
 
-// use image_schema;
+pub mod grpc;
