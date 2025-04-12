@@ -8,7 +8,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .build_client(false)
         .build_server(true)
         .build_transport(false)
-        .out_dir(Path::new(&out_dir));
+        .out_dir(Path::new(&out_dir))
+        .compile_protos(&["src/proto/image.proto"], &["src/proto"])?;
 
     Ok(())
 }
