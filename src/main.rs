@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use futures::future;
 use prost::Message;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::NamedPipeServer;
@@ -18,6 +19,27 @@ const PIPE_NAME: &str = if cfg!(windows) {
 } else {
     "/tmp/as_ipc_poc.sock"
 };
+
+const PIPE_NAMES: [&str; 6] = if cfg!(windows) {
+    [
+        r"\\.\pipe\as_ipc_poc_pipe_0",
+        r"\\.\pipe\as_ipc_poc_pipe_1",
+        r"\\.\pipe\as_ipc_poc_pipe_2",
+        r"\\.\pipe\as_ipc_poc_pipe_3",
+        r"\\.\pipe\as_ipc_poc_pipe_4",
+        r"\\.\pipe\as_ipc_poc_pipe_5",
+    ]
+} else {
+    [
+        "/tmp/as_ipc_poc_0.sock",
+        "/tmp/as_ipc_poc_1.sock",
+        "/tmp/as_ipc_poc_2.sock",
+        "/tmp/as_ipc_poc_3.sock",
+        "/tmp/as_ipc_poc_4.sock",
+        "/tmp/as_ipc_poc_5.sock",
+    ]
+};
+
 // const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 // const CONNECTION_TIMEOUT_SECS: u64 = 30;
 
@@ -61,9 +83,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     {
         info!("Setting up Windows Named Pipe server at {}", PIPE_NAME);
-        if let Err(e) = start_windows_server().await {
-            tracing::error!("Error starting windows server: {}", e)
+
+        let mut handles = Vec::with_capacity(PIPE_NAMES.len());
+
+        for pipe_name in PIPE_NAMES {
+            let handle = tokio::spawn(async move {
+                if let Err(err) = start_windows_server(pipe_name).await {
+                    tracing::error!(
+                        "Error starting windows server for pipe: {}, err: {}",
+                        pipe_name,
+                        err
+                    );
+                }
+            });
+
+            handles.push(handle);
         }
+
+        future::join_all(handles).await;
     }
 
     #[cfg(unix)]
@@ -85,16 +122,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // }
 
 #[cfg(windows)]
-async fn start_windows_server() -> Result<(), Box<dyn std::error::Error>> {
+async fn start_windows_server(pipe_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     info!("start_windows_server()...");
-    info!("Opening pipe...");
+    info!("Opening pipe: {}...", pipe_name);
 
     loop {
         let mut pipe = match ServerOptions::new()
             .reject_remote_clients(true)
             .first_pipe_instance(true)
             .pipe_mode(PipeMode::Message)
-            .create(PIPE_NAME)
+            .create(pipe_name)
             // .in_buffer_size(104857600)
             // .out_buffer_size(104857600)
         {
@@ -106,11 +143,11 @@ async fn start_windows_server() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         if let Err(e) = pipe.connect().await {
-            tracing::error!("Error pip.connect(), error waiting for connection: {}", e);
+            tracing::error!("Error pipe.connect(), error waiting for connection: {}", e);
             return Err(Box::new(e));
         }
 
-        if let Err(e) = handle_connection(&mut pipe).await {
+        if let Err(e) = handle_connection(pipe_name, &mut pipe).await {
             tracing::error!("Error handle Windows connection: {}", e)
         }
 
@@ -121,6 +158,7 @@ async fn start_windows_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn handle_connection(
+    pipe_name: &str,
     stream: &mut NamedPipeServer,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // let (reader, mut writer) = tokio::io::split(stream);
@@ -133,7 +171,10 @@ async fn handle_connection(
 
         let bytes_read = stream.read_buf(&mut buffer).await?;
         if bytes_read == 0 {
-            info!("handle_connection(): Client disconnected (read 0 bytes)");
+            info!(
+                "handle_connection(): Pipe: {}: Client disconnected (read 0 bytes)",
+                pipe_name
+            );
             break;
         }
         info!("handle_connection(): Bytes read: {}", bytes_read);
@@ -176,8 +217,8 @@ async fn handle_connection(
 
                     let duration = start_time.elapsed();
                     println!(
-                        "Execution done! Request ID: {}, time: {:?}",
-                        request.request_id, duration
+                        "handle_connection(): Pipe: {}: Execution done! Request ID: {}, time: {:?}",
+                        pipe_name, request.request_id, duration
                     );
 
                     buffer.clear();
