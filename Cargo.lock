@@ -425,6 +425,7 @@ dependencies = [
 name = "ipc-poc-backend"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "image",
  "mime_guess",
  "prost",

@@ -1,8 +1,5 @@
-use std::path::Path;
-
-use image::EncodableLayout;
+use bytes::BytesMut;
 use prost::Message;
-use tokio::io::AsyncBufReadExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::NamedPipeServer;
 #[cfg(windows)]
@@ -12,7 +9,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::time::Instant;
 use tracing::info;
 
-use ipc_poc_backend::image_schema::{ImageResponse, ImageType, ResponseCode};
+use ipc_poc_backend::image_schema::{ImageRequest, ImageResponse, ImageType, ResponseCode};
 
 // protocol
 
@@ -89,10 +86,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(windows)]
 async fn start_windows_server() -> Result<(), Box<dyn std::error::Error>> {
-    // use tokio::time::Instant;
-
-    // let mut should_be_first_pipe_instance = true;
-
     info!("start_windows_server()...");
     info!("Opening pipe...");
 
@@ -127,70 +120,74 @@ async fn start_windows_server() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// where
-//     T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static,
 async fn handle_connection(
     stream: &mut NamedPipeServer,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (reader, mut writer) = tokio::io::split(stream);
+    // let (reader, mut writer) = tokio::io::split(stream);
     info!("handle_connection() about to read from connection...");
 
-    let mut reader = tokio::io::BufReader::new(reader);
+    let mut buffer = BytesMut::with_capacity(2048);
 
     loop {
         info!("New wait loop!");
-        let mut requested_file_name = String::new();
-        let n = reader.read_line(&mut requested_file_name).await?;
-        if n == 0 {
-            println!("Oh no! Anyways...");
+
+        let bytes_read = stream.read_buf(&mut buffer).await?;
+        if bytes_read == 0 {
+            info!("handle_connection(): Client disconnected (read 0 bytes)");
             break;
         }
+        info!("handle_connection(): Bytes read: {}", bytes_read);
 
-        // let collected: Vec<String> = requested_file_name.split(":").collect();
-        // requested_file_name = requested_file_name.trim().to_string();
-        let start = Instant::now();
-        let (request_id, file_name) = requested_file_name.split_once(":").unwrap();
+        loop {
+            let mut buf_cursor = std::io::Cursor::new(&buffer);
 
-        info!(
-            "handle_connection(), number of bytes read: {}, request id: {}, requested file: {}",
-            n, request_id, file_name,
-        );
-        let mut file = tokio::fs::File::open(file_name.trim().to_string()).await?;
-        info!("Opened the file successfully!");
+            match ImageRequest::decode_length_delimited(&mut buf_cursor) {
+                Err(err) => {
+                    // Maybe be case of insufficient data
+                    // or a corrupted message. Prost's DecodeError doesn't have different types of errors.
+                    // Just assume more data is needed and break the inner loop \
+                    // (Never has a pipe failed on me upto now except when queueing a lot of data into the socket's buffer, in which case: SOCKET_STACK_BUFFER_OVERFLOW something something).
+                    info!("Decoding failed (need more data or malformed): {}", err);
+                    break;
+                }
+                Ok(request) => {
+                    let start_time = Instant::now();
 
-        let mut image_bytes = Vec::new();
-        file.read_to_end(&mut image_bytes).await?;
+                    let mut file = tokio::fs::File::open(request.path).await?;
+                    info!("Opened the file successfully!");
 
-        let content_length = image_bytes.len() as u32;
+                    let mut image_bytes = Vec::new();
+                    file.read_to_end(&mut image_bytes).await?;
 
-        let image_response = ImageResponse {
-            request_id: request_id.parse::<u32>().unwrap(),
-            response_code: ResponseCode::Success.into(),
-            image_type: ImageType::Jpeg.into(),
-            content_length: content_length,
-            data: image_bytes,
-        };
+                    let content_length = image_bytes.len() as u32;
 
-        let mut response_buffer = Vec::new();
-        // image_response.encode(&mut response_buffer)?;
+                    let image_response = ImageResponse {
+                        request_id: request.request_id,
+                        response_code: ResponseCode::Success.into(),
+                        image_type: ImageType::Jpeg.into(),
+                        content_length,
+                        data: image_bytes,
+                    };
 
-        // stream.write_all(&response_buffer).await?;
-        // stream.flush().await?;
-        ImageResponse::encode_length_delimited(&image_response, &mut response_buffer)?;
-        // info!("Image buffer: {:?}", response_buffer,);
-        // info!(
-        //     "Image buffer: {:?}, \n\n\n\n\n\n\n\n\n{:?}",
-        //     response_buffer,
-        // ImageResponse::decode_length_delimited(response_buffer.as_bytes())?.len
-        // );
-        writer.write(&response_buffer).await?;
-        writer.flush().await?;
+                    let mut response_buffer = Vec::new();
+                    ImageResponse::encode_length_delimited(&image_response, &mut response_buffer)?;
+                    stream.write(&response_buffer).await?;
+                    stream.flush().await?;
 
-        let duration = start.elapsed();
-        println!(
-            "Execution done! Path: {}, time: {:?}",
-            requested_file_name, duration
-        );
+                    let duration = start_time.elapsed();
+                    println!(
+                        "Execution done! Request ID: {}, time: {:?}",
+                        request.request_id, duration
+                    );
+
+                    buffer.clear();
+                }
+            }
+
+            if buffer.is_empty() {
+                break;
+            }
+        }
     }
 
     Ok(())
