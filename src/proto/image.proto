@@ -1,29 +1,29 @@
 syntax = "proto3";
 package image;
 
-// enum Flip {
-//   DefaultFlip = 0;
-//   Upright = 1;
-//   Rotated90 = 2;
-//   Rotated180 = 3;
-//   Rotated270 = 4;
-// }
+enum Flip {
+  DefaultFlip = 0;
+  Upright = 1;
+  Rotated90 = 2;
+  Rotated180 = 3;
+  Rotated270 = 4;
+}
 
-// enum Size {
-//   DefaultSize = 0;
-//   Low = 1;
-//   Mid = 2;
-//   High = 3;
-// }
+enum Size {
+  DefaultSize = 0;
+  Low = 1;
+  Mid = 2;
+  High = 3;
+}
 
-// message ImageRequest {
-//   Flip flip = 1;
-//   Size thumb_size = 2;
-//   string path = 3;
-//   bool jpeg_sidecar = 4;
-//   bool force_libraw = 5;
-//   bool request_id = 6;
-// }
+message ImageRequest {
+  Flip flip = 1;
+  Size thumb_size = 2;
+  string path = 3;
+  bool jpeg_sidecar = 4;
+  bool force_libraw = 5;
+  uint32 request_id = 6;
+}
 
 enum ResponseCode {
   DefaultResponseCode = 0;
